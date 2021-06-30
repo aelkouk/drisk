@@ -25,11 +25,11 @@ fn_rank = []
 for key, vals in infiles.items():
     key = inpath + key
     fn_rank.append((key, key, True))
-    for val in vals:
-        val = inpath + val
-        fn_rank.append((key, val, False))
+    # for val in vals:
+    #     val = inpath + val
+    #     fn_rank.append((key, val, False))
 hist_fpath, prj_fpath, usehist_flag = fn_rank[my_rank]
-if not usehist_flag:
+if usehist_flag:
     mpi_calc_smi(hist_fpath, prj_fpath, usehist_flag=usehist_flag, outpath=outpath)
 else:
     print('SKIPED, ', os.path.basename(prj_fpath))

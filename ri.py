@@ -20,9 +20,9 @@ basedir = '/storage/elkoukah/empirical/'
 inpath = basedir + '0_data/QTOT/'
 outpath = basedir + '2_pipeline/drisk/store/RI/'
 fn_rank = ro_inputs(inpath)
-hist_fpath, prj_fpath, usehist_flag = fn_rank[my_rank+60]
-print(len(fn_rank))
-if not usehist_flag:
+hist_fpath, prj_fpath, usehist_flag = fn_rank[my_rank]
+# print(len(fn_rank))
+if usehist_flag:
     mpi_calc_ri(hist_fpath, prj_fpath, usehist_flag=usehist_flag, outpath=outpath)
 else:
     print('SKIPED, ', os.path.basename(prj_fpath[0]))

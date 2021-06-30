@@ -114,6 +114,7 @@ def mpi_calc_ri(hist_fpath, prj_fpath, usehist_flag=False, outpath='../../2_pipe
     ngrd = nlat * nlon
     qtot_histix = np.reshape(qtot_hist.values, (nt_hist, ngrd))
     if usehist_flag:
+        ds_qtot = qtot_hist
         nt_prj = nt_hist
         qtot_prjix = qtot_histix
         outfname = os.path.basename(hist_fpath[0].replace('qs', 'qtot'))
@@ -130,6 +131,24 @@ def mpi_calc_ri(hist_fpath, prj_fpath, usehist_flag=False, outpath='../../2_pipe
     dsout.to_netcdf(os.path.join(outpath, outfname), encoding={'RI': {"dtype": "f4"}})
     print(outfname, 'DONE')
 
+def calc_dpr_dths(infile, varname, ths, outpath):
+    ds =  xr.open_dataset(infile, decode_times=False)
+    di = ds[varname].values
+    nt, ngrd = di.shape
+    nth = ths.size
+    if 'historical' in infile:
+        di_ths = np.stack([di]*nth).transpose(1,2,0)
+        dpr = (di_ths<=ths).sum(axis=0)/nt
+        dsout = xr.Dataset(data_vars={'DPr':(('nth', 'ngrd'), dpr.T)})
+    else:
+        di_dts = np.stack([di[25*12:55*12], di[-30*12:]])
+        di_ths = np.stack([di_dts] * nth).transpose(1, 2, 3, 0)
+        dpr = (di_ths <= ths).sum(axis=1) / (30*12)
+        dsout = xr.Dataset(data_vars={'DPr':(('nth', 'nT', 'ngrd'), dpr.transpose(2,0,1))})
+    parts = os.path.basename(infile).split('_')
+    outfname = '_'.join([parts[0], parts[1], parts[3], varname]) + '.nc'
+    dsout.to_netcdf(os.path.join(outpath, outfname))
+    print(outfname, 'DONE')
 
 def calc_exp_dths(infile, varname, pop, countries_ma, ncoun, ths, outpath):
     ds =  xr.open_dataset(infile, decode_times=False)
@@ -161,3 +180,67 @@ def calc_exp_dths(infile, varname, pop, countries_ma, ncoun, ths, outpath):
     dsout.to_netcdf(os.path.join(outpath, outfname))
     print(outfname, 'DONE')
 
+def calc_exp_dths_cstclim(infile, varname, pop, countries_ma, ncoun, ths, outpath):
+    ds =  xr.open_dataset(infile, decode_times=False)
+    di = ds[varname].values
+    nt, ngrd = di.shape
+    ny, npt, nssp, nlat, nlon = pop.shape
+    popr = np.reshape(pop, (ny, npt, nssp, ngrd)).transpose(1,2,0,3)
+    nth = len(ths)
+
+    dths_exp_ncoun = np.full((npt, nssp, nth, ny, ncoun), np.nan)
+    dths_exp_glob = np.full((npt, nssp, nth, ny), np.nan)
+    for i, thi in enumerate(ths):
+        di_ny_thi = (di <= thi).sum(axis=0)
+        expthi = di_ny_thi * popr
+        for ci in range(ncoun):
+            ci_ma = (countries_ma == ci)
+            expthi_ci = np.nansum(expthi[:,:,:, ci_ma], axis=-1)/nt
+            dths_exp_ncoun[:,:,i,:,ci] = expthi_ci
+        expthi_grd = np.nansum(expthi, axis=-1)/nt
+        dths_exp_glob[:,:,i,:] = expthi_grd
+
+    dsout = xr.Dataset(data_vars={'exp_cn':(('npt', 'nssp', 'nth', 'ny', 'ncn'), dths_exp_ncoun),
+                                  'exp_glob':(('npt', 'nssp', 'nth', 'ny'), dths_exp_glob),})
+    parts = os.path.basename(infile).split('_')
+    outfname = '_'.join([parts[0],parts[1],parts[3],varname]) + '.nc'
+    dsout.to_netcdf(os.path.join(outpath, outfname))
+    print(outfname, 'DONE')
+
+def calc_exp_dths_cstpop(infile, varname, pop, countries_ma, ncoun, ths, outpath):
+    ds =  xr.open_dataset(infile, decode_times=False)
+    di = ds[varname].values
+    nt, ngrd = di.shape
+    ny = nt//12
+    di_ny = np.reshape(di, (ny, 12, ngrd)).transpose(1,0,2)
+    nyp, nlat, nlon = pop.shape
+    dny = nyp-ny
+    popr = np.reshape(pop[dny:], (ny, ngrd))
+    nth = len(ths)
+
+    dths_exp_ncoun = np.full((nth, ny, ncoun), np.nan)
+    dths_exp_glob = np.full((nth, ny), np.nan)
+    for i, thi in enumerate(ths):
+        di_ny_thi = (di_ny <= thi).sum(axis=0)
+        expthi = di_ny_thi * popr
+        for ci in range(ncoun):
+            ci_ma = (countries_ma == ci)
+            expthi_ci = np.nansum(expthi[:, ci_ma], axis=-1)/12
+            dths_exp_ncoun[i,:,ci] = expthi_ci
+        expthi_grd = np.nansum(expthi, axis=-1)/12
+        dths_exp_glob[i] = expthi_grd
+
+    dsout = xr.Dataset(data_vars={'exp_cn':(('nth', 'ny', 'ncn'), dths_exp_ncoun),
+                                  'exp_glob':(('nth', 'ny'), dths_exp_glob),})
+    parts = os.path.basename(infile).split('_')
+    outfname = '_'.join([parts[0],parts[1],parts[3],varname]) + '.nc'
+    dsout.to_netcdf(os.path.join(outpath, outfname))
+    print(outfname, 'DONE')
+
+def lognormal_population(pop, refpop):
+    ''' Normalize population using log10-normal cdf'''
+    logdata = np.log(refpop[refpop>0])
+    params = (np.nanmean(logdata), np.nanstd(logdata))
+    popcdf = stats.norm.cdf(np.log(pop), *params)
+    #popref_cdf = stats.norm.cdf(np.log(refpop), *params)
+    return popcdf#, popref_cdf
