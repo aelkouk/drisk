@@ -64,67 +64,25 @@ exp_rcpssp_unc = np.nanstd(exp_rcpssp_ensunc, axis=(0,1))
 # IRI classes (nvar, nrcp, nssp, nth, nT, ngrd)
 ds_iri = xr.load_dataset(basepath+'2_pipeline/drisk/store/IRI/iri.nc')
 iri = ds_iri['IRI'].values#[:,:,:, di]
-iri_unc = ds_iri['IRIunc'].values#[:,:,:, di]
 rclass = np.arange(0., 0.91, 0.1)
 nrcl = rclass.size
 
-ds_countries = xr.load_dataarray(basepath + '0_data/COUNTRIES/countries.nc')
-countries = ds_countries.values.ravel()
-ncoun = len(ds_countries.ISO)
+mafile = basepath+'0_data/IPCC/SREX_regions_mask_0.5x0.5.nc'
+ds_ma = xr.load_dataarray(mafile)
+countries = ds_ma.values.ravel() - 1
+ncoun = 26
 
 iri_exp = np.zeros((nrcl, nvar, (nrcp-1), nssp, nth, nT, ncoun))
 iri_exp_glob = np.zeros((nrcl, nvar, (nrcp-1), nssp, nth, nT))
-iri_exp_unc = np.zeros((nrcl, nvar, (nrcp-1), nssp, nth, nT, ncoun))
-iri_exp_glob_unc = np.zeros((nrcl, nvar, (nrcp-1), nssp, nth, nT))
 for rci in range(nrcl):
     exprci = (iri>=rclass[rci]) * exp_rcpssp
-    exprci_unc = (iri >= rclass[rci]) * exp_rcpssp_unc
     for ci in range(ncoun):
         ci_ma = (countries == ci)
         iri_exp[rci, :, :, :, :, :, ci] = np.nansum(exprci[:, :, :, :, :, ci_ma], axis=-1)
-        iri_exp_unc[rci, :, :, :, :, :, ci] = np.nansum(exprci_unc[:, :, :, :, :, ci_ma], axis=-1)
     iri_exp_glob[rci] = np.nansum(exprci, axis=-1)
-    iri_exp_glob_unc[rci] = np.nansum(exprci_unc, axis=-1)
 
-
-# Exposure clim and socioeco change
-## Fix socio-eco exposure
-tmp_ref = np.stack([pop_tt_rur[:, 0, 1]]*(nrcp-1)*nth*nT).reshape((nrcp-1),nth,nT,nvar,ngrd).transpose(3,0,1,2,4)
-exp_clim = ens_mean[:, 1:]*tmp_ref
-## Fix climate exposure
-tmp_dpr = np.stack([ens_mean[:, 0]]*nssp).transpose(1,0,2,3,4)
-tmp_pop = np.stack([pop_nT]*nth).reshape(nth,nT,nvar,nssp,ngrd).transpose(2,3,0,1,4)
-exp_ssp = tmp_pop*tmp_dpr
-
-# IRI
-ds_iri = xr.load_dataset(basepath+'2_pipeline/drisk/store/IRI/iri_climssp_ct.nc')
-iri_clim = ds_iri['IRIclim'].values#[:,:, di]
-iri_ssp = ds_iri['IRIssp'].values#[:,:, di]
-
-iri_exp_clim = np.zeros((nrcl, nvar, (nrcp-1), nth, nT, ncoun))
-iri_exp_glob_clim = np.zeros((nrcl, nvar, (nrcp-1), nth, nT))
-
-iri_exp_ssp = np.zeros((nrcl, nvar, nssp, nth, nT, ncoun))
-iri_exp_glob_ssp = np.zeros((nrcl, nvar, nssp, nth, nT))
-
-for rci in range(nrcl):
-    exprci_clim = (iri_clim>=rclass[rci]) * exp_clim
-    exprci_ssp = (iri_ssp>=rclass[rci]) * exp_ssp
-    for ci in range(ncoun):
-        ci_ma = (countries == ci)
-        iri_exp_clim[rci, :,:, :, :, ci] = np.nansum(exprci_clim[:, :, :, :, ci_ma], axis=-1)
-        iri_exp_ssp[rci, :,:, :, :, ci] = np.nansum(exprci_ssp[:, :, :, :, ci_ma], axis=-1)
-    iri_exp_glob_clim[rci] = np.nansum(exprci_clim, axis=-1)
-    iri_exp_glob_ssp[rci] = np.nansum(exprci_ssp, axis=-1)
-
-dsout = xr.Dataset(data_vars={'IRIexp': (('nrcl', 'nvar', 'nrcp', 'nssp', 'nth', 'nT', 'ncoun'), iri_exp),
+dsout = xr.Dataset(data_vars={'IRIexp': (('nrcl', 'nvar', 'nrcp', 'nssp', 'nth', 'nT', 'nsrex'), iri_exp),
                               'IRIexp_glob': (('nrcl', 'nvar', 'nrcp', 'nssp', 'nth', 'nT'), iri_exp_glob),
-                              'IRIexp_clim': (('nrcl', 'nvar', 'nrcp', 'nth', 'nT', 'ncoun'), iri_exp_clim),
-                              'IRIexp_clim_glob': (('nrcl', 'nvar', 'nrcp', 'nth', 'nT'), iri_exp_glob_clim),
-                              'IRIexp_ssp': (('nrcl', 'nvar', 'nssp', 'nth', 'nT', 'ncoun'), iri_exp_ssp),
-                              'IRIexp_ssp_glob': (('nrcl', 'nvar', 'nssp', 'nth', 'nT'), iri_exp_glob_ssp),
-                              'IRIexp_unc': (('nrcl', 'nvar', 'nrcp', 'nssp', 'nth', 'nT', 'ncoun'), iri_exp_unc),
-                              'IRIexp_glob_unc': (('nrcl', 'nvar', 'nrcp', 'nssp', 'nth', 'nT'), iri_exp_glob_unc)
                               })
-dsout.to_netcdf(basepath + '2_pipeline/drisk/store/IRI/iri_exp.nc')
+dsout.to_netcdf(basepath + '2_pipeline/drisk/store/IRI/iri_exp_srex.nc')
 print('DONE')

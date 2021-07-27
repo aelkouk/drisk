@@ -41,23 +41,32 @@ for ncf in ncfs:
 
 # Ensemble mean pr
 ens_mean = np.nanmean(ens_dpr, axis=(2,3))
-
-# Ref exposure
-ds_pop_ref = xr.load_dataarray(basepath + '0_data/POP/pop_total_UN-Adjusted.nc')
-pop_ref = ds_pop_ref.values[3] # 2015 population counts
-exp_ref = ens_mean[:, 0]*pop_ref.ravel()
+## Uncertainty
+ens_std = np.nanstd(ens_dpr, axis=(2,3))
 
 # Future exposure
 ds_pop = xr.load_dataarray(basepath + '0_data/POP/pop_total_rural.nc')
 pop_tt_rur = ds_pop.values.reshape(2,10,nssp,ngrd)
-pop_nT = np.stack([pop_tt_rur[0, 2], pop_tt_rur[0, 6]]) # Total pop 2030, 2070
+pop_tt_rur = pop_tt_rur[[1,0]] # change to match SMI-rur/RI-tot
+pop_nT = np.stack([pop_tt_rur[:, 2], pop_tt_rur[:, 6]]) # Total pop 2030, 2070
 ## Reshape to the same dims
-tmp_pop = np.stack([pop_nT]*nvar*nth*(nrcp-1)).reshape(nvar,(nrcp-1),nth,nT,nssp,ngrd).transpose(0,1,4,2,3,5)
+tmp_pop = np.stack([pop_nT]*nth*(nrcp-1)).reshape((nrcp-1),nth,nT,nvar,nssp,ngrd).transpose(3,0,4,1,2,5)
 tmp_dpr = np.stack([ens_mean[:, 1:]]*nssp).transpose(1,2,0,3,4,5)
 exp_rcpssp = tmp_pop*tmp_dpr
+## Uncertainty
+tmp_dpr = np.stack([ens_std[:, 1:]]*nssp).transpose(1,2,0,3,4,5)
+exp_rcpssp_unc = tmp_pop*tmp_dpr
+
+# Ref exposure
+# ds_pop_ref = xr.load_dataarray(basepath + '0_data/POP/pop_total_UN-Adjusted.nc')
+# pop_ref = ds_pop_ref.values[3] # 2015 population counts
+# exp_ref = ens_mean[:, 0]*pop_ref.ravel()
+tmp_ref = np.stack([pop_tt_rur[:, 0, 1]]*nth*nT).reshape(nth,nT,nvar,ngrd).transpose(2,0,1,3)
+exp_ref = ens_mean[:, 0]*tmp_ref
 
 # Log-normalize exposure
 popnorm = np.full((nvar, (nrcp-1), nssp, nth, nT, ngrd), np.nan)
+popnorm_unc = np.full((nvar, (nrcp-1), nssp, nth, nT, ngrd), np.nan)
 for vari in range(nvar):
     for thi in range(nth):
         ref = exp_ref[vari, thi].ravel()
@@ -65,6 +74,9 @@ for vari in range(nvar):
         lognorm = lognormal_population(est, ref)
         popnorm[vari, :, :, thi] = np.reshape(lognorm, ((nrcp-1), nssp, nT, ngrd))
 
+        est = exp_rcpssp_unc[vari, :, :, thi].ravel()
+        lognorm = lognormal_population(est, ref)
+        popnorm_unc[vari, :, :, thi] = np.reshape(lognorm, ((nrcp-1), nssp, nT, ngrd))
 # IRI index
 ## VI in 2030 and 2070
 dsvi = xr.load_dataarray(basepath+'0_data/POP/vi_norm.nc')
@@ -72,18 +84,34 @@ vi = dsvi.values[:, :-1]
 tmp_vi = np.stack([vi[4], vi[12]])
 tmp_vi = np.stack([tmp_vi]*nvar*nth*(nrcp-1)).reshape(nvar,(nrcp-1),nth,nT,nssp,ngrd).transpose(0,1,4,2,3,5)
 iri = tmp_vi*popnorm
+## Uncertainty
+iri_unc = tmp_vi*popnorm_unc
+# Non Normalized IRI
+dsvi = xr.load_dataarray(basepath+'0_data/POP/vi_nonnorm.nc')
+vi = dsvi.values[:, :-1]
+tmp_vi = np.stack([vi[4], vi[12]])
+tmp_vi = np.stack([tmp_vi]*nvar*nth*(nrcp-1)).reshape(nvar,(nrcp-1),nth,nT,nssp,ngrd).transpose(0,1,4,2,3,5)
+iri_nonnorm = tmp_vi*exp_rcpssp
 
 dsout = xr.Dataset(data_vars={'IRI': (('nvar', 'nrcp', 'nssp', 'nth', 'nT', 'ngrd'), iri),})
+                              #'nonIRI': (('nvar', 'nrcp', 'nssp', 'nth', 'nT', 'ngrd'), iri_nonnorm),})
+                              #'IRIunc': (('nvar', 'nrcp', 'nssp', 'nth', 'nT', 'ngrd'), iri_unc)})
 dsout.to_netcdf(basepath + '2_pipeline/drisk/store/IRI/iri.nc')
+print('DONE')
+
+dsout = xr.Dataset(data_vars={'expnorm': (('nvar', 'nrcp', 'nssp', 'nth', 'nT', 'ngrd'), popnorm),
+                              'expnonnorm': (('nvar', 'nrcp', 'nssp', 'nth', 'nT', 'ngrd'), exp_rcpssp),})
+dsout.to_netcdf(basepath + '2_pipeline/drisk/store/IRI/exp_grd.nc')
 print('DONE')
 
 
 # IRI under fixed climate and socio-eco change
 ## Fix socio-eco exposure
-exp_clim = ens_mean[:, 1:]*pop_ref.ravel()
+tmp_ref = np.stack([pop_tt_rur[:, 0, 1]]*(nrcp-1)*nth*nT).reshape((nrcp-1),nth,nT,nvar,ngrd).transpose(3,0,1,2,4)
+exp_clim = ens_mean[:, 1:]*tmp_ref
 ## Fix climate exposure
 tmp_dpr = np.stack([ens_mean[:, 0]]*nssp).transpose(1,0,2,3,4)
-tmp_pop = np.stack([pop_nT]*nvar*nth).reshape(nvar,nth,nT,nssp,ngrd).transpose(0,3,1,2,4)
+tmp_pop = np.stack([pop_nT]*nth).reshape(nth,nT,nvar,nssp,ngrd).transpose(2,3,0,1,4)
 exp_ssp = tmp_pop*tmp_dpr
 
 ## Exposure

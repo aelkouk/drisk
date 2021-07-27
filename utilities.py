@@ -213,25 +213,25 @@ def calc_exp_dths_cstpop(infile, varname, pop, countries_ma, ncoun, ths, outpath
     nt, ngrd = di.shape
     ny = nt//12
     di_ny = np.reshape(di, (ny, 12, ngrd)).transpose(1,0,2)
-    nyp, nlat, nlon = pop.shape
+    nyp, npt, nlat, nlon = pop.shape
     dny = nyp-ny
-    popr = np.reshape(pop[dny:], (ny, ngrd))
+    popr = np.reshape(pop[dny:], (ny, npt, ngrd)).transpose(1,0,2)
     nth = len(ths)
 
-    dths_exp_ncoun = np.full((nth, ny, ncoun), np.nan)
-    dths_exp_glob = np.full((nth, ny), np.nan)
+    dths_exp_ncoun = np.full((npt, nth, ny, ncoun), np.nan)
+    dths_exp_glob = np.full((npt, nth, ny), np.nan)
     for i, thi in enumerate(ths):
         di_ny_thi = (di_ny <= thi).sum(axis=0)
         expthi = di_ny_thi * popr
         for ci in range(ncoun):
             ci_ma = (countries_ma == ci)
-            expthi_ci = np.nansum(expthi[:, ci_ma], axis=-1)/12
-            dths_exp_ncoun[i,:,ci] = expthi_ci
+            expthi_ci = np.nansum(expthi[:, :, ci_ma], axis=-1)/12
+            dths_exp_ncoun[:, i,:,ci] = expthi_ci
         expthi_grd = np.nansum(expthi, axis=-1)/12
-        dths_exp_glob[i] = expthi_grd
+        dths_exp_glob[:, i] = expthi_grd
 
-    dsout = xr.Dataset(data_vars={'exp_cn':(('nth', 'ny', 'ncn'), dths_exp_ncoun),
-                                  'exp_glob':(('nth', 'ny'), dths_exp_glob),})
+    dsout = xr.Dataset(data_vars={'exp_cn':(('npt', 'nth', 'ny', 'ncn'), dths_exp_ncoun),
+                                  'exp_glob':(('npt', 'nth', 'ny'), dths_exp_glob),})
     parts = os.path.basename(infile).split('_')
     outfname = '_'.join([parts[0],parts[1],parts[3],varname]) + '.nc'
     dsout.to_netcdf(os.path.join(outpath, outfname))
@@ -244,3 +244,22 @@ def lognormal_population(pop, refpop):
     popcdf = stats.norm.cdf(np.log(pop), *params)
     #popref_cdf = stats.norm.cdf(np.log(refpop), *params)
     return popcdf#, popref_cdf
+
+def calc_exp_uncer_glob(infile, varname, pop, ths):
+    ds =  xr.open_dataset(infile, decode_times=False)
+    di = ds[varname].values
+    nt, ngrd = di.shape
+    ny = nt//12
+    di_ny = np.reshape(di, (ny, 12, ngrd)).transpose(1,0,2)
+    nyp, npt, nssp, nlat, nlon = pop.shape
+    dny = nyp-ny
+    popr = np.reshape(pop[dny:], (ny, npt, nssp, ngrd)).transpose(1,2,0,3)
+    nth = len(ths)
+    
+    dths_exp_glob = np.full((npt, nssp, nth, ny, ngrd), np.nan)
+    for i, thi in enumerate(ths):
+        di_ny_thi = (di_ny <= thi).sum(axis=0)/12
+        expthi = di_ny_thi * popr
+        #expthi_grd = np.nansum(expthi, axis=-1) / 12
+        dths_exp_glob[:,:,i,:] = expthi
+    return dths_exp_glob
