@@ -1,11 +1,12 @@
-# Purpose: Estimate drought frequency
+# Purpose: Calculate drought frequency
 # Record of revisions:
 # Date 		Programmer 		Description of change
 # ======== 	============= 	=====================
-# 11/09/19 	A. Elkouk     	Original code
+# 04/2021 	A. Elkouk     	Original code
 
 import numpy as np
 import xarray as xr
+import os
 
 
 def calc_dpr_dths(di, ths, Ti, outpath, outfname):

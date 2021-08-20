@@ -56,6 +56,7 @@ exp_rcpssp = tmp_pop*tmp_dpr
 ## Uncertainty
 tmp_dpr = np.stack([ens_std[:, 1:]]*nssp).transpose(1,2,0,3,4,5)
 exp_rcpssp_unc = tmp_pop*tmp_dpr
+exp_rcpssp_unc = np.where(np.isnan(exp_rcpssp_unc), 0, exp_rcpssp_unc)
 
 # Ref exposure
 # ds_pop_ref = xr.load_dataarray(basepath + '0_data/POP/pop_total_UN-Adjusted.nc')
@@ -66,7 +67,7 @@ exp_ref = ens_mean[:, 0]*tmp_ref
 
 # Log-normalize exposure
 popnorm = np.full((nvar, (nrcp-1), nssp, nth, nT, ngrd), np.nan)
-popnorm_unc = np.full((nvar, (nrcp-1), nssp, nth, nT, ngrd), np.nan)
+popnorm_unc = np.full((2, nvar, (nrcp-1), nssp, nth, nT, ngrd), np.nan)
 for vari in range(nvar):
     for thi in range(nth):
         ref = exp_ref[vari, thi].ravel()
@@ -74,9 +75,13 @@ for vari in range(nvar):
         lognorm = lognormal_population(est, ref)
         popnorm[vari, :, :, thi] = np.reshape(lognorm, ((nrcp-1), nssp, nT, ngrd))
 
-        est = exp_rcpssp_unc[vari, :, :, thi].ravel()
-        lognorm = lognormal_population(est, ref)
-        popnorm_unc[vari, :, :, thi] = np.reshape(lognorm, ((nrcp-1), nssp, nT, ngrd))
+        #est = exp_rcpssp_unc[vari, :, :, thi].ravel()
+        estp = (exp_rcpssp[vari, :, :, thi]+exp_rcpssp_unc[vari, :, :, thi]).ravel()
+        estm = (exp_rcpssp[vari, :, :, thi]-exp_rcpssp_unc[vari, :, :, thi]).ravel()
+        lognorm_p = lognormal_population(estp, ref)
+        lognorm_m = lognormal_population(estm, ref)
+        popnorm_unc[0, vari, :, :, thi] = np.reshape(lognorm_m, ((nrcp-1), nssp, nT, ngrd))
+        popnorm_unc[1, vari, :, :, thi] = np.reshape(lognorm_p, ((nrcp - 1), nssp, nT, ngrd))
 # IRI index
 ## VI in 2030 and 2070
 dsvi = xr.load_dataarray(basepath+'0_data/POP/vi_norm.nc')
@@ -86,6 +91,8 @@ tmp_vi = np.stack([tmp_vi]*nvar*nth*(nrcp-1)).reshape(nvar,(nrcp-1),nth,nT,nssp,
 iri = tmp_vi*popnorm
 ## Uncertainty
 iri_unc = tmp_vi*popnorm_unc
+dsout = xr.Dataset(data_vars={'IRIstd': (('mpstd', 'nvar', 'nrcp', 'nssp', 'nth', 'nT', 'ngrd'), iri_unc),})
+dsout.to_netcdf(basepath + '2_pipeline/drisk/store/IRI/iri_unc.nc')
 # Non Normalized IRI
 dsvi = xr.load_dataarray(basepath+'0_data/POP/vi_nonnorm.nc')
 vi = dsvi.values[:, :-1]
