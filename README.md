@@ -1,5 +1,5 @@
 # drisk
-More detailed README is coming
+More detailed README and code documentation is coming soon, apologies for the delay  
 
 
 
